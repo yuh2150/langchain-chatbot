@@ -4,6 +4,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from enum import Enum
 from pydantic import BaseModel, Field
+from langgraph.prebuilt import create_react_agent
 
 llm = ChatOpenAI(temperature=0, model="gpt-4o-mini") 
 
@@ -62,16 +63,32 @@ def filter_response(text_input, user_details ):
     print(user_details)
     ask_for = check_what_is_empty(user_details)
     return user_details, ask_for
-def run(response) :
+def get_booking_details(response) :
     booking_details = BookingCarDetails(name="",number_phone="",pick_up_location="",destination_location="", pick_up_time="")
     booking_details = add_non_empty_details(booking_details ,response)
     ask_for = check_what_is_empty(booking_details)
+    
     while ask_for:  
         if ask_for:
             ai_response = ask_for_info(ask_for)
             print(ai_response)
         else:
             print('Everything gathered move to next phase')
-    
-if __name__ == "__main__": 
-    run()
+        text_input = input()
+        user_details, ask_for = filter_response(text_input, user_details)
+
+    # tools = [get_booking_details]
+    system_prompt = """
+    You are a very powerful assistant. Be polite, clear, and understandable.
+    If users ask general questions, answer them helpfully. If users want to book a ride, 
+    call the 'get_booking_details' function to gather booking information, and pass the user's final input to the function.
+    Remember to keep the user's last input
+    """
+    agent_executor = create_react_agent(llm, tools = [get_booking_details] , state_modifier=system_prompt)
+    inputs = {"messages": [("user", "my name is Huy,I want to book a car from 271 Nguyen Van Linh to 466 NGuyen van linh da nang at now")]}
+    for s in agent_executor.stream(inputs, stream_mode="values"):
+        message = s["messages"][-1]
+        if isinstance(message, tuple):
+            print(message)
+        else:
+            message.pretty_print()
