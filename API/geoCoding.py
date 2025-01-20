@@ -14,7 +14,7 @@ class GeoCodingAPI:
             'Authorization': basic_auth(os.getenv("MAP_USERNAME"), os.getenv("MAP_PASSWORD"))
         }
 
-    def get_geocoding(self, address, channel="chatbot",X="goog"):
+    def get_geocoding(self, address, channel="ai",X="goog"):
         params = {
             "address": address,
             "channel": channel,
