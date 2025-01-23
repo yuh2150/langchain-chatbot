@@ -23,32 +23,34 @@ from API.is_Airport import IsAirport
 
 from langgraph.graph import StateGraph, MessagesState, START, END
 
+from quotes import Quote
+
 llm = ChatOpenAI(temperature=0.2, model="gpt-4o-mini")
 jupiterAPI = os.getenv('JUPITER_API')
 quoteAPI = str(jupiterAPI) + "/demand/v1/quotes"
 bookingsAPI  = str(jupiterAPI) + '/demand/v1/bookings'
 
 class BookingCarDetails(BaseModel):
-    """Details for the bookings car details"""
+    """Details for the bookings car. Does not autofill without providing user information"""
     name: str = Field(
         ...,
-        description="The name of the person booking the ride.This is optional if provided",
+        description="The name of the person booking the ride.",
     )
     number_phone: str = Field(
         ...,
-        description="The phone number of the user.This is optional if provided",
+        description="The phone number of the user.",
     )
     pick_up_location: str = Field(
         ...,
-        description="The location where the user will be picked up. This can be a full address or a specific location name.This is optional if provided",
+        description="The location where the user will be picked up. This can be a full address or a specific location name.",
     )
     destination_location: str = Field(
         ...,
-        description="The destination location for the ride. This can be a full address or a specific location name.This is optional if provided"
+        description="The destination location for the ride. This can be a full address or a specific location name."
     )
     pick_up_time: str = Field(
         ...,
-        description="The time the user intends to be picked up. No format keeps the text related to time..This is optional if provided"
+        description="The time the user intends to be picked up. No format keeps the text related to time."
     )
     @field_validator('pick_up_location')
     @classmethod
@@ -84,8 +86,11 @@ class BookingCarDetails(BaseModel):
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     # quote_id: str
-    # booking_info: BookingCarDetails
-    
+    booking_info: BookingCarDetails 
+    human_input: str
+state = State(booking_info= BookingCarDetails(
+        name="", number_phone="", pick_up_location="", destination_location="", pick_up_time=""
+    )) 
 def check_what_is_empty(user_personal_details):
     ask_for = []
     # Check if fields are empty
@@ -136,20 +141,23 @@ def ask_confirm_info(booking_details: BookingCarDetails):
     print(message)
 
 @tool
-def get_booking_details(state : State):
+def get_booking_details(state : MessagesState):
     """ Call function to get the details for a booking from user"""
+    # state = State(booking_info=BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time=""))
     chain = llm.with_structured_output(BookingCarDetails)
     response =chain.invoke(state["messages"][-1].content)
-    booking_details = BookingCarDetails(
-        name="", number_phone="", pick_up_location="", destination_location="", pick_up_time=""
-    )
+    booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="")
     user_details = add_non_empty_details(booking_details, response)
     ask_for = check_what_is_empty(user_details)
     while ask_for:  
         ai_response = ask_for_info(ask_for)
         print(ai_response)
-        text_input = input()
+        # print(ai_response)
+        text_input = interrupt(ai_response)
+        print("hi" + text_input)
         user_details, ask_for = filter_response(text_input, user_details)
+        return {"human_input": text_input}
+    
     return user_details
 @tool
 def get_quotes(booking_details : BookingCarDetails):
@@ -159,13 +167,32 @@ def get_quotes(booking_details : BookingCarDetails):
     # geoCoding_destination =
     geoCoding_pickup =  geoCodingAPI.get_geocoding(booking_details.pick_up_location)
     geoCoding_destination = geoCodingAPI.get_geocoding(booking_details.destination_location)
-    
     # input_datetime = datetime.fromisoformat(pick_up_time)
     pickup_datetime = "2025-01-23T09:24:10.000Z"
     
     pickup_coords = { "latitude": float(geoCoding_pickup['results'][0]['geometry']['location']['lat']),"longitude": float(geoCoding_pickup['results'][0]['geometry']['location']['lng']),}
     destination_coords = { "latitude": float(geoCoding_destination['results'][0]['geometry']['location']['lat']),"longitude": float(geoCoding_destination['results'][0]['geometry']['location']['lng']),}
     quotes_data = quotesAPI.get_quotes(pickup_datetime, pickup_coords, destination_coords)
+    quotes = []
+    for item in quotes_data:
+        quote = Quote(
+        quote_id=item['quoteId'],
+        expires_at=item['expiresAt'],
+        vehicle_type=item['vehicleType'],
+        price_value=item['price']['value'],
+        price_currency=item['price']['currency'] if 'currency' in item['price'] and item['price']['currency'] is not None else 'CAD',
+        luggage=item['luggage'],
+        passengers=item['passengers'],
+        provider_name=item['provider']['name'],
+        provider_phone=item['provider']['phone']
+        )
+        quotes.append(quote)
+
+    for quote in quotes:
+        print({
+            "title": f"{quote.vehicle_type} - {quote.price_value} {quote.price_currency}",
+            "payload": f"{quote.quote_id}"
+        })
     return "15$"
 # @tool
 # def ask_confirm(booking_details : BookingCarDetails):
@@ -192,43 +219,69 @@ def change_info(fields : List[str], booking_details : BookingCarDetails):
         response =chain.invoke(text_input)
         user_details = add_non_empty_details(booking_details,response)
     return user_details 
+@tool
+def accept_booking(quote_Id: str ,booking_details : BookingCarDetails ):
+    """Call function to accept booking with quote_ID."""
+    bookingAPI = BookingAPI(bookingsAPI)
+    # quote_id = tracker.get_slot("quoteId")
+    person_name = booking_details.name
+    number_contact = booking_details.number_phone
     
-tools = [get_booking_details, get_quotes , change_info]  
+    passenger_info = {
+        "title": "Mr",
+        "phone": number_contact,
+        "firstName": person_name,
+        "lastName": ""
+    }
+
+    response = bookingAPI.create_booking(
+        quote_id=quote_Id,
+        passenger_info=passenger_info
+    )
+    return response
+       
+tools = [get_booking_details, get_quotes , change_info , accept_booking]  
 
 memory = MemorySaver()
 system_prompt = """
-        You are a very powerful booking assistant. 
-        Guide the user through a booking process. Start by asking for their booking details(name, phone, pick_up_location, destination_location, number_phone). 
+        You are a very powerful assistant. 
+        If user express the intention to book a ride please guide the user through a booking process. 
+        Start by calling the function get_booking_details from the user's last message
         Once provided, ask user for confirmation. If they confirm, proceed to provide the price. 
         If not, ask if they want to change any details. 
         Allow them to modify specific fields they mention and repeat the confirmation process
     """
 agent_executor = create_react_agent(llm, tools = tools, state_modifier=system_prompt , checkpointer= memory)
-# inputs = {"messages": []}  
-# config = {"configurable": {"thread_id": "1"}}
-# while True:
-#     user_input = input("You: ")
-#     inputs["messages"].append(("user", user_input))
-#     for s in agent_executor.stream(inputs,config=config, stream_mode="values"):
-#         message = s["messages"][-1]
-#         if isinstance(message, tuple):
-#             print(f"Assistant: {message[1]}")
-#         else:
-#             message.pretty_print()
+inputs = {"messages": []}  
+config = {"configurable": {"thread_id": "1"}}
+
+print(state["booking_info"])
+while True:
+    user_input = input("You: ")
+    print(state["booking_info"])
+    inputs["messages"].append(("user", user_input))
+    for s in agent_executor.stream(inputs,config=config, stream_mode="values"):
+        message = s["messages"][-1]
+        if isinstance(message, tuple):
+            print(f"Assistant: {message[1]}")
+        else:
+            message.pretty_print()
+
 app = Flask(__name__)
 
-@app.route('/booking', methods=['POST'])
-def booking():
-    user_input = request.json.get("user_input", "")
-    user_id = request.json.get("user_id", "")
-    # Prepare inputs for LangChain agent
-    inputs = {"messages": [("user", user_input)]}
-    config = {"configurable": {"thread_id": user_id}}
+# @app.route('/booking', methods=['POST'])
+# def booking():
     
-    for s in agent_executor.stream(inputs, config=config, stream_mode="values"):
-        message = s["messages"][-1].content
-    return jsonify({"assistant_response": message})
+#     user_input = request.json.get("user_input", "")
+#     user_id = request.json.get("user_id", "")
+#     # Prepare inputs for LangChain agent
+#     inputs = {"messages": [("user", user_input)]}
+#     config = {"configurable": {"thread_id": user_id}}
+    
+#     for s in agent_executor.stream(inputs, config=config, stream_mode="values"):
+#         message = s["messages"][-1].content
+#     return jsonify({"assistant_response": message})
 
-# Run the Flask app
-if __name__ == "__main__":
-    app.run(debug=True)
+# # Run the Flask app
+# if __name__ == "__main__":
+#     booking()
