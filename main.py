@@ -31,26 +31,26 @@ quoteAPI = str(jupiterAPI) + "/demand/v1/quotes"
 bookingsAPI  = str(jupiterAPI) + '/demand/v1/bookings'
 
 class BookingCarDetails(BaseModel):
-    """Details for the bookings car. Does not autofill without providing user information"""
+    """Details for the bookings car details"""
     name: str = Field(
         ...,
-        description="The name of the person booking the ride.",
+        description="The name of the person booking the ride. Do not autofill if not provided",
     )
     number_phone: str = Field(
         ...,
-        description="The phone number of the user.",
+        description="The phone number of the user. Do not autofill if not provided",
     )
     pick_up_location: str = Field(
         ...,
-        description="The location where the user will be picked up. This can be a full address or a specific location name.",
+        description="The location where the user will be picked up. This can be a full address or a specific location name. Do not autofill if not provided",
     )
     destination_location: str = Field(
         ...,
-        description="The destination location for the ride. This can be a full address or a specific location name."
+        description="The destination location for the ride. This can be a full address or a specific location name. Do not autofill if not provided"
     )
     pick_up_time: str = Field(
         ...,
-        description="The time the user intends to be picked up. No format keeps the text related to time."
+        description="The time the user intends to be picked up. No format keeps the text related to time. Do not autofill if not provided"
     )
     @field_validator('pick_up_location')
     @classmethod
@@ -85,12 +85,12 @@ class BookingCarDetails(BaseModel):
 
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
-    # quote_id: str
+    quote_id: str
     booking_info: BookingCarDetails 
     human_input: str
-state = State(booking_info= BookingCarDetails(
-        name="", number_phone="", pick_up_location="", destination_location="", pick_up_time=""
-    )) 
+# state = State(booking_info= BookingCarDetails(
+#         name="", number_phone="", pick_up_location="", destination_location="", pick_up_time=""
+#     )) 
 def check_what_is_empty(user_personal_details):
     ask_for = []
     # Check if fields are empty
@@ -113,13 +113,11 @@ def update_details(current_details: BookingCarDetails, new_details: BookingCarDe
 def ask_for_info(ask_list: list):
     first_prompt = ChatPromptTemplate.from_template(
         """Ask one question at a time, even if you don't get all the info. Don't list the questions or greet the user. 
-        Explain you're gathering info to help. If 'ask_for' is empty, thank the user and ask how you can assist next.
+        Explain you're gathering info to help.
         ### ask_for list: {ask_for}"""
     )
-
     info_gathering_chain = first_prompt | llm | StrOutputParser()
     ai_chat = info_gathering_chain.invoke({"ask_for": ask_list})
-    print(first_prompt)
     return ai_chat
 def filter_response(text_input, user_details : BookingCarDetails ):
     chain = llm.with_structured_output(BookingCarDetails)
@@ -139,17 +137,21 @@ def ask_confirm_info(booking_details: BookingCarDetails):
         f"- Contact Number: {booking_details.number_phone}\n"
     )
     print(message)
-
+def call_model (state):
+    messages = state["messages"]
+    response = llm.invoke(messages)
+    # We return a list, because this will get added to the existing list
+    return {"messages": [response]}
 @tool
 def get_booking_details(state : MessagesState):
     """ Call function to get the details for a booking from user"""
     # state = State(booking_info=BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time=""))
     chain = llm.with_structured_output(BookingCarDetails)
-    response =chain.invoke(state["messages"][-1].content)
+    response = chain.invoke(state["messages"][-1].content)
     booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="")
     user_details = add_non_empty_details(booking_details, response)
     ask_for = check_what_is_empty(user_details)
-    while ask_for:  
+    if ask_for:  
         ai_response = ask_for_info(ask_for)
         print(ai_response)
         # print(ai_response)
@@ -255,10 +257,10 @@ agent_executor = create_react_agent(llm, tools = tools, state_modifier=system_pr
 inputs = {"messages": []}  
 config = {"configurable": {"thread_id": "1"}}
 
-print(state["booking_info"])
+# print(state["booking_info"])
 while True:
     user_input = input("You: ")
-    print(state["booking_info"])
+    # print(state["booking_info"])
     inputs["messages"].append(("user", user_input))
     for s in agent_executor.stream(inputs,config=config, stream_mode="values"):
         message = s["messages"][-1]

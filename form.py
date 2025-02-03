@@ -12,23 +12,23 @@ class BookingCarDetails(BaseModel):
     """Details for the bookings car details"""
     name: str = Field(
         ...,
-        description="The name of the person booking the ride.This is optional if provided",
+        description="The name of the person booking the ride. Do not autofill if not provided",
     )
     number_phone: str = Field(
         ...,
-        description="The phone number of the user",
+        description="The phone number of the user. Do not autofill if not provided",
     )
     pick_up_location: str = Field(
         ...,
-        description="The location where the user will be picked up. This can be a full address or a specific location name.",
+        description="The location where the user will be picked up. This can be a full address or a specific location name. Do not autofill if not provided",
     )
     destination_location: str = Field(
         ...,
-        description="The destination location for the ride. This can be a full address or a specific location name."
+        description="The destination location for the ride. This can be a full address or a specific location name. Do not autofill if not provided"
     )
     pick_up_time: str = Field(
         ...,
-        description="The time the user intends to be picked up. No format keeps the text related to time."
+        description="The time the user intends to be picked up. No format keeps the text related to time. Do not autofill if not provided"
     )
 def check_what_is_empty(user_peronal_details):
     ask_for = []
