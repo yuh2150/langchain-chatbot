@@ -1,6 +1,6 @@
 
 from typing_extensions import TypedDict
-from typing import Annotated, Literal , List
+from typing import Annotated, Literal , List , Optional 
 from pydantic import BaseModel, Field , field_validator, ValidationInfo , model_validator
 from langgraph.graph.message import AnyMessage , add_messages
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -124,3 +124,12 @@ class ConfirmDetails(BaseModel):
     #     # default= 'True',
     #     description="True if the user wants to change info and continue booking, False if they want to cancel."
     # )
+
+class FieldChange(BaseModel):
+    field_name: str = Field(
+        ..., description= "The name of the field to be changed. Must be one of: 'name', 'number_phone', 'pick_up_location', 'destination_location', 'pick_up_time', 'flight_code'."
+    )
+    new_value: Optional[str] = Field(None, description="The new value of the field,return 'None' if unspecified.")
+
+class ChangeRequest(BaseModel):
+    changes: List[FieldChange] = Field(..., description="A list of requested changes, each containing a field name and its new value.")
