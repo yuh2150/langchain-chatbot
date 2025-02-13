@@ -6,6 +6,7 @@ from langgraph.graph.message import AnyMessage , add_messages
 from langgraph.graph import StateGraph, MessagesState, START, END
 import sys
 import os
+import requests
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from booking_agent.api.booking import BookingAPI
@@ -17,6 +18,22 @@ jupiterAPI = os.getenv('JUPITER_API')
 quoteAPI = str(jupiterAPI) + "/demand/v1/quotes"
 bookingsAPI  = str(jupiterAPI) + '/demand/v1/bookings'
 
+def getData_for_duckling(text, dims):
+    url = 'http://localhost:8000/parse'
+    data = {
+        'locale': 'en_US',
+        'text': text,
+        'dims': dims,
+        'tz': "Asia/Ho_Chi_Minh"
+    }
+    response = requests.post(url, data=data)
+    if response.status_code == 200:
+        json_response = response.json()
+        # value = json_response[0]['value']['value']
+        return json_response
+    else:
+        return f"Error: {response.status_code}"
+    
 class BookingCarDetails(BaseModel):
     """Details for the bookings car details"""
     name: str = Field(
@@ -44,10 +61,12 @@ class BookingCarDetails(BaseModel):
         ...,
         description="Flight numbers, consisting of letters and numbers, usually start with the airline code (e.g. VN123, SQ318)."
     )
+    pick_up_location: str
+    destination_location: str
     
     @field_validator('pick_up_location')
     @classmethod
-    def validate_pickup(cls, value:str, info: ValidationInfo):
+    def validate_pickup(cls, value:str):
         geoCodingAPI = GeoCodingAPI()
         if value == '':
             return ''
@@ -75,9 +94,19 @@ class BookingCarDetails(BaseModel):
             else:
             
                 raise ValueError(f"Invalid destination location: {value}")
+    @field_validator('pick_up_time')
+    @classmethod
+    def validate_pick_up_time(cls, value : str):
+        dimensions = ["time"]
+        if value == '':
+            return ''
+        data = getData_for_duckling(value,dimensions)
+        if data and isinstance(data, list) and 'value' in data[0] and 'value' in data[0]['value']:
+            return data[0]['value']['value']
+        else:
+            raise ValueError("Invalid time format") 
     @model_validator(mode="after")
     def set_flight_code_if_airport(self):
-        """ Kiểm tra nếu điểm đón là sân bay thì gán flight_code = '123' """
         geoCodingAPI = GeoCodingAPI()
         API_Airport = IsAirport(base_url=jupiterAPI + '/v2/distance/airport')
 
@@ -91,6 +120,7 @@ class BookingCarDetails(BaseModel):
 
                 if is_Airport[0] == False:  # Nếu là sân bay
                     self.flight_code = 'No Request'
+        
         return self
 
 class State(TypedDict):
@@ -98,7 +128,8 @@ class State(TypedDict):
     quote_id: str
     booking_info: BookingCarDetails 
     slot_empty: list
-    change_request : str
+    change_request : List
+    handle_request : str
     
 class Router(TypedDict):
     route: Literal["booking", "other"]

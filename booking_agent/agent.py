@@ -4,7 +4,8 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from utils.nodes import NodeUtils
 from langgraph.types import Command, interrupt
-
+from flask import Flask , request , jsonify
+app = Flask(__name__)
 builder = StateGraph(State)
 # builder.add_node("call_model", call_model)
 builder.add_node("get_info", NodeUtils.info_chain)
@@ -21,13 +22,15 @@ builder.add_node("perform_request", NodeUtils.perform_request)
 
 builder.add_node("human_request", NodeUtils.human_node_request)
 builder.add_node("ask_request", NodeUtils.ask_request)
-builder.add_node("human_ans", NodeUtils.human_ans_change)
+builder.add_node("human_ans", NodeUtils.human_ans_request)
+builder.add_node("ask_change", NodeUtils.system_ask_change)
+
+builder.add_node("human_ans_change", NodeUtils.human_node_ans_change)
 
 
 builder.add_node("get_quotes_booking", NodeUtils.get_quotes)
 builder.add_node("human_choose_quote", NodeUtils.human_choose_quote)
 builder.add_node("accept_booking", NodeUtils.accept_booking) 
-
 
 
 
@@ -45,6 +48,7 @@ builder.add_edge("human_choose_quote", "accept_booking")
 
 builder.add_edge("ask_request","human_ans")
 builder.add_edge("human_ans", "perform_request")
+builder.add_edge("ask_change","human_ans_change")
 builder.add_edge("accept_booking", END)
 # builder.add_edge("call_model", "info")
 # checkpointer = MemorySaver()
@@ -67,31 +71,50 @@ graph = parent_graph.compile(checkpointer=memory)
 import uuid
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
-while True:
-    user = input("User: ")
-    if user.lower() == "q":
-        print("Đã thoát chatbot.")
-        break
-    human_command = {"messages": user} 
-    while True:  
-        last_output = None  
-        for output in graph.stream(human_command, config=config, stream_mode="updates", subgraphs=True):
-            if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
-                for key, value in output[1].items():
-                    if isinstance(value, dict) and "messages" in value:
-                        for message in value["messages"]:
-                            # print(type(message))
-                            if isinstance(message, tuple) and message[0] == "content":
-                                print("Assitant : " + message[1])
-                            if isinstance(message, dict) and "content" in message:
-                                if message["role"] == "ai":
-                                    print("Assitant : " + message["content"])
+last_output = None
+def process_chat(user_input, user_id):
+    # human_command = {"messages": user_input}
+    global last_output
+    responses = []
+    config = {"configurable": {"thread_id": user_id}}
+    if last_output is None:
+        human_command = {"messages": user_input}
+    else : 
+        human_command = Command(resume=user_input)
+    
+    for output in graph.stream(human_command, config=config, stream_mode="updates", subgraphs=True):
+        if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+            for key, value in output[1].items():
+                if isinstance(value, dict) and "messages" in value:
+                    for message in value["messages"]:
+                        if isinstance(message, tuple) and message[0] == "content":
+                            responses.append(message[1])
+                        if isinstance(message, dict) and "content" in message:
+                            if message["role"] == "ai":
+                                responses.append(message["content"])
         
-            last_output = output  
-        if isinstance(last_output, tuple) and isinstance(last_output[1], dict) and "__interrupt__" in last_output[1]:
-            user = input("User: ")  
-            human_command = Command(resume=user)
-        else:
-            break 
+        last_output = output  
+        if isinstance(last_output, tuple) and isinstance(last_output[1], dict) and "__interrupt__" not in last_output[1]:
+        
+            last_output = None
+            # return jsonify({"message": "success", "responses": responses})
+    
+    return responses
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.get_json()
+    user_id = data.get("userId", "")
+    user_input = data.get("message", "")
+    if not user_input:
+        return jsonify({"error": "Message is required"}), 400
+    
+    responses = process_chat(user_input, user_id)
+    
+    # if isinstance(last_output, tuple) and isinstance(last_output[1], dict) and "__interrupt__" in last_output[1]:
+    #     return jsonify({"message": "__interrupt__", "responses": responses})
+    
+    return jsonify({"message": "success", "responses": responses})
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
