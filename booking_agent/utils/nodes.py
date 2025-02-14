@@ -64,14 +64,23 @@ class Quote:
 def check_what_is_empty(user_personal_details):
     ask_for = []
     for field, value in user_personal_details.model_dump().items():
-        if value in [None, "", 0 ,]:  
+        if value in [None, "", 0,"Request"]:  
             ask_for.append(field)
     return ask_for
 def add_non_empty_details(current_details: BookingCarDetails, new_details: BookingCarDetails):
     non_empty_details = {k: v for k, v in new_details.model_dump().items() if v not in [None, ""]}
+    if 'pick_up_location' in non_empty_details and non_empty_details['pick_up_location'] == current_details.destination_location :
+        print(non_empty_details['pick_up_location'])
+        non_empty_details['pick_up_location'] = ""
+    if 'destination_location' in non_empty_details and non_empty_details['destination_location'] == current_details.pick_up_location :
+        print(non_empty_details['destination_location'])
+        non_empty_details['destination_location'] = ""
     if new_details.pick_up_location != '': 
         non_empty_details["flight_code"] = new_details.flight_code
+    print(current_details)
+    print(non_empty_details)
     updated_details = current_details.model_copy(update=non_empty_details)
+    print(updated_details)
     return updated_details
 class NodeUtils:
     def call_model(state: State):
@@ -82,9 +91,16 @@ class NodeUtils:
         if "booking_info" in state:
             booking_details = state["booking_info"]
         else:
-            booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code= "")
+            booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")
+        
+        if "slot_empty" in state and state["slot_empty"] != []:
+            ask_for = state["slot_empty"]
+            print(ask_for)
+            messages = f"{ask_for[0]} : {state["messages"][-1].content}"
+        else:
+            messages = state["messages"][-1].content
         chain = llm.with_structured_output(BookingCarDetails)
-        response = chain.invoke(state["messages"][-1].content)
+        response = chain.invoke(messages)
         user_details = add_non_empty_details(booking_details, response)
         ask_for = check_what_is_empty(user_details)
         return Command(update={"slot_empty": ask_for , "booking_info": user_details})
@@ -186,7 +202,7 @@ class NodeUtils:
             f"- Name: {state["booking_info"].name}\n"
             f"- Contact Number: {state["booking_info"].number_phone}\n"
         )
-        if state["booking_info"].flight_code != 'No Request':
+        if state["booking_info"].flight_code != 'No request':
                 message += f"- Flight Code: {state['booking_info'].flight_code}\n"
         return Command(update= {"messages": [
                         {
@@ -352,7 +368,7 @@ class NodeUtils:
         response = chain_confirm.invoke(user_confirm.messages)
         return Command(update={"change_request" : response.request})
 
-    def perform_request(state :State , config) -> Command[Literal["ask_confirm"]] :
+    def perform_request(state :State , config) -> Command[Literal["get_info", "ask_change"]] :
         new_details = state["booking_info"]
         changes = []
         processed_fields = []
@@ -365,7 +381,18 @@ class NodeUtils:
         for change in changes:
                 if change.field_name not in [None, "None"] and change.field_name in ["name", "number_phone", "pick_up_location", "destination_location", "pick_up_time", "flight_code"]:
                     if change.new_value not in [None,"None"] :
-                        setattr(new_details, change.field_name, change.new_value)
+                        temp_data = {
+                            "name": "",
+                            "number_phone": "",
+                            "pick_up_location": "",
+                            "destination_location": "",
+                            "pick_up_time": "",
+                            "flight_code": ""
+                        }
+                        temp_data.update({change.field_name: change.new_value})  # Chỉ cập nhật field cần thay đổi
+                        temp_detail = BookingCarDetails(**temp_data)
+                        new_details = add_non_empty_details(new_details,temp_detail)
+                        # setattr(new_details, change.field_name, change.new_value)
                         processed_fields.append(change)
         changes = [change for change in changes if change not in processed_fields]
         
@@ -385,8 +412,8 @@ class NodeUtils:
                     "change_request" : changes,
                     "booking_info" : new_details
                 },
-                goto="ask_confirm",
-            ) 
+                goto="get_info",
+            )  
                     # else:
                     #     field_name_mapping = {
                     #         "name": "name",
@@ -432,17 +459,17 @@ class NodeUtils:
                 },
                 goto="human_ans_change",
             ) 
-    def human_node_ans_change(state :State, config) -> Command[Literal["ask_confirm", "ask_change"]]:
+    def human_node_ans_change(state :State, config) -> Command[Literal["get_info", "ask_change"]]:
         """A node for collecting user confirm."""
         new_details = state["booking_info"]
         user_confirm = interrupt(value="Please answer.")
         chain = llm.with_structured_output(BookingCarDetails)
         messages = f"{state["handle_request"]} : {user_confirm}"
+        print(messages)
         res = chain.invoke(messages)
         new_details = add_non_empty_details(new_details,res)
         changes = state["change_request"]
         changes = [change for change in changes if change.field_name != state["handle_request"] ]
-        print(changes)
         if changes : 
             return Command(
                 update={
@@ -457,5 +484,5 @@ class NodeUtils:
                 update={
                     "booking_info" : new_details
                 },
-                goto="ask_confirm",
+                goto="get_info",
             )

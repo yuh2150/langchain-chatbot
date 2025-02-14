@@ -108,7 +108,6 @@ def chat():
     user_input = data.get("message", "")
     if not user_input:
         return jsonify({"error": "Message is required"}), 400
-    
     responses = process_chat(user_input, user_id)
     
     # if isinstance(last_output, tuple) and isinstance(last_output[1], dict) and "__interrupt__" in last_output[1]:

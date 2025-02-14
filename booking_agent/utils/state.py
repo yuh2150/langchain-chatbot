@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 import sys
 import os
 import requests
+from datetime import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from booking_agent.api.booking import BookingAPI
@@ -66,14 +67,14 @@ class BookingCarDetails(BaseModel):
     
     @field_validator('pick_up_location')
     @classmethod
-    def validate_pickup(cls, value:str):
+    def validate_pickup(cls, value:str, info: ValidationInfo):
         geoCodingAPI = GeoCodingAPI()
         if value == '':
             return ''
         else :
             geoCoding_pickup = geoCodingAPI.get_geocoding(value)
             if geoCoding_pickup["status"] == "OK" :
-                
+
                 return geoCoding_pickup['results'][0]['formatted_address']
             else:
                 raise ValueError(f"Invalid pick-up location: {value}")
@@ -90,6 +91,7 @@ class BookingCarDetails(BaseModel):
                 if geoCoding_destination['results'][0]['formatted_address'] == info.data['pick_up_location']:
                     raise ValueError(f"Invalid destination location: {value}")
                 else:
+
                     return geoCoding_destination['results'][0]['formatted_address']
             else:
             
@@ -105,8 +107,10 @@ class BookingCarDetails(BaseModel):
             return data[0]['value']['value']
         else:
             raise ValueError("Invalid time format") 
+    
+    
     @model_validator(mode="after")
-    def set_flight_code_if_airport(self):
+    def set_flight_code_if_airport(self)-> str:
         geoCodingAPI = GeoCodingAPI()
         API_Airport = IsAirport(base_url=jupiterAPI + '/v2/distance/airport')
 
@@ -117,10 +121,10 @@ class BookingCarDetails(BaseModel):
                 pick_up_lng = geoCoding_pickup['results'][0]['geometry']['location']['lng']
                 
                 is_Airport = API_Airport.is_Airport(pick_up_lat, pick_up_lng)
-
                 if is_Airport[0] == False:  # Nếu là sân bay
-                    self.flight_code = 'No Request'
-        
+                    self.flight_code = 'No request'
+                else :
+                    self.flight_code = 'Request'
         return self
 
 class State(TypedDict):
@@ -144,7 +148,7 @@ class ConfirmDetails(BaseModel):
     """
     confirm: str = Field(
         ..., 
-        description="User confirmation intent. True if the user confirms booking, False otherwise."
+        description="User confirmation intent. 'True' if the user confirm booking, 'False' otherwise or want to change information."
     )
     request: str = Field(
         ..., 
