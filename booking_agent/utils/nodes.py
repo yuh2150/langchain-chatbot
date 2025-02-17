@@ -64,7 +64,7 @@ class Quote:
 def check_what_is_empty(user_personal_details):
     ask_for = []
     for field, value in user_personal_details.model_dump().items():
-        if value in [None, "", 0,"Request"]:  
+        if value in [None, "", 0,'Request']:  
             ask_for.append(field)
     return ask_for
 def add_non_empty_details(current_details: BookingCarDetails, new_details: BookingCarDetails):
@@ -74,7 +74,7 @@ def add_non_empty_details(current_details: BookingCarDetails, new_details: Booki
     if 'destination_location' in non_empty_details and non_empty_details['destination_location'] == current_details.pick_up_location :
         non_empty_details['destination_location'] = ""
     if new_details.pick_up_location != '': 
-        non_empty_details["flight_code"] = new_details.flight_code
+        non_empty_details['flight_code'] = new_details.flight_code
     updated_details = current_details.model_copy(update=non_empty_details)
     return updated_details
 def update_non_empty_details(current_details: BookingCarDetails, new_details: BookingCarDetails , request):
@@ -97,15 +97,15 @@ class NodeUtils:
         return {"messages": response}
     def info_chain(state : State):
         if "booking_info" in state:
-            booking_details = state["booking_info"]
+            booking_details = state['booking_info']
         else:
             booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")
         
-        if "slot_empty" in state and state["slot_empty"] != []:
-            ask_for = state["slot_empty"]
-            messages = f"{ask_for[0]} : {state["messages"][-1].content}"
+        if "slot_empty" in state and state['slot_empty'] != []:
+            ask_for = state['slot_empty']
+            messages = f"{ask_for[0]} : {state['messages'][-1].content}"
         else:
-            messages = state["messages"][-1].content
+            messages = state['messages'][-1].content
         chain = llm.with_structured_output(BookingCarDetails)
         response = chain.invoke(messages)
         user_details = add_non_empty_details(booking_details, response)
@@ -161,7 +161,7 @@ class NodeUtils:
     def human_node(
         state: State, config
     ):
-    # -> Command[Literal["get_info"]] :
+    # -> Command[Literal["get_info']] :
         """A node for collecting user input."""
         
         user_input = interrupt(value="Ready for user input.")
@@ -185,8 +185,8 @@ class NodeUtils:
             ### ask_for list: {ask_for}"""
         )
         info_gathering_chain = first_prompt | llm | StrOutputParser()
-        if state["slot_empty"] : 
-            ai_chat = info_gathering_chain.invoke({"ask_for": state["slot_empty"]})
+        if state['slot_empty'] : 
+            ai_chat = info_gathering_chain.invoke({"ask_for": state['slot_empty']})
             return Command(update= {"messages": [
                         {
                             "role": "ai",
@@ -194,7 +194,7 @@ class NodeUtils:
                     }
                 ]} , goto="human")
     def get_state(state : State):
-        slot_empty = state["slot_empty"]
+        slot_empty = state['slot_empty']
         if slot_empty == [] :
             return "ask_confirm"
         else : 
@@ -203,13 +203,13 @@ class NodeUtils:
         """Ask the user again to confirm the booking details. """
         message = (
             f"Please confirm your ride details:\n"
-            f"- Pickup Location: {state["booking_info"].pick_up_location}\n"
-            f"- Destination: {state["booking_info"].destination_location}\n"
-            f"- Pickup Time: {state["booking_info"].pick_up_time}\n"
-            f"- Name: {state["booking_info"].name}\n"
-            f"- Contact Number: {state["booking_info"].number_phone}\n"
+            f"- Pickup Location: {state['booking_info'].pick_up_location}\n"
+            f"- Destination: {state['booking_info'].destination_location}\n"
+            f"- Pickup Time: {state['booking_info'].pick_up_time}\n"
+            f"- Name: {state['booking_info'].name}\n"
+            f"- Contact Number: {state['booking_info'].number_phone}\n"
         )
-        if state["booking_info"].flight_code != 'No request':
+        if state['booking_info'].flight_code != 'No request':
                 message += f"- Flight Code: {state['booking_info'].flight_code}\n"
         return Command(update= {"messages": [
                         {
@@ -219,7 +219,7 @@ class NodeUtils:
                 ]} )
     def router_node(state: State):
         system_message = "Classify the incoming query as either about booking or not."
-        messages = [{"role": "system", "content": system_message}] + state["messages"]
+        messages = [{"role": "system", "content": system_message}] + state['messages']
         router_model = llm.with_structured_output(Router)
         route = router_model.invoke(messages)
         return {"route": route["route"]}
@@ -227,12 +227,12 @@ class NodeUtils:
     def route_after_prediction(
         state: RouterState,
     ) -> Literal["booking_graph", "call_model"]:
-        if state["route"] == "booking":
+        if state['route'] == "booking":
             return "booking_graph"
         else:
             return "call_model"
     def get_confirm_state(state: State):
-        user_confirm = state["messages"][-1].content
+        user_confirm = state['messages'][-1].content
         chain_confirm = llm.with_structured_output(ConfirmDetails)
         response = chain_confirm.invoke(user_confirm)
         if (response.confirm == "True") :
@@ -273,8 +273,8 @@ class NodeUtils:
         """Call function to accept booking with quote_ID."""
         bookingAPI = BookingAPI(bookingsAPI)
         # quote_id = tracker.get_slot("quoteId")
-        person_name = state["booking_info"].name
-        number_contact = state["booking_info"].number_phone
+        person_name = state['booking_info'].name
+        number_contact = state['booking_info'].number_phone
         
         passenger_info = {
             "title": "Mr",
@@ -283,7 +283,7 @@ class NodeUtils:
             "lastName": ""
         }
         response = bookingAPI.create_booking(
-            quote_id=state["quote_id"],
+            quote_id=state['quote_id'],
             passenger_info=passenger_info
         )
         return response
@@ -313,9 +313,9 @@ class NodeUtils:
         ) 
         
     def get_change_state(state :State):
-        # ["ask_request", "cancel_book","perform_request"]
+        # ["ask_request", "cancel_book","perform_request']
         
-        user_confirm = state["messages"][-1].content
+        user_confirm = state['messages'][-1].content
         chain_confirm = llm.with_structured_output(ConfirmDetails)
         response = chain_confirm.invoke(user_confirm)
         
@@ -323,7 +323,7 @@ class NodeUtils:
             if (response.request == "None"):
                 return "ask_request"
             else :
-                # updates = [Command(update={"change_request" : response.request}) , "perform_request"]
+                # updates = [Command(update={"change_request" : response.request}) , "perform_request']
                 return "perform_request"
         else :
             return "cancel_book"
@@ -374,14 +374,14 @@ class NodeUtils:
         return Command(update={"change_request" : response.request})
 
     def perform_request(state :State , config) -> Command[Literal["ask_confirm", "ask_change"]] :
-        new_details = state["booking_info"]
+        new_details = state['booking_info']
         changes = []
         processed_fields = []
         if "change_request" in state:
-            changes = state["change_request"]
+            changes = state['change_request']
         else :
             chain_confirm = llm.with_structured_output(ChangeRequest)
-            response =chain_confirm.invoke(state["messages"][-1].content)
+            response =chain_confirm.invoke(state['messages'][-1].content)
             changes = response.changes
         for change in changes:
                 if change.field_name not in [None, "None"] and change.field_name in ["name", "number_phone", "pick_up_location", "destination_location", "pick_up_time", "flight_code"]:
@@ -423,7 +423,7 @@ class NodeUtils:
                 goto="ask_confirm",
             ) 
     def system_ask_change(state :State, config):
-        handle_request = state["handle_request"]
+        handle_request = state['handle_request']
         field_name_mapping = {
             "name": "name",
             "number_phone": "number phone",
@@ -433,7 +433,7 @@ class NodeUtils:
             "flight_code": "flight code",
         }
         field = field_name_mapping.get(handle_request)
-        # state["change_request"]
+        # state['change_request']
         return Command(
                 update={
                     "messages": [
@@ -447,16 +447,16 @@ class NodeUtils:
             ) 
     def human_node_ans_change(state :State, config) -> Command[Literal["ask_confirm", "ask_change"]]:
         """A node for collecting user confirm."""
-        new_details = state["booking_info"]
+        new_details = state['booking_info']
         user_confirm = interrupt(value="Please answer.")
         chain = llm.with_structured_output(BookingCarDetails)
-        messages = f"{state["handle_request"]} : {user_confirm}"
+        messages = f"{state['handle_request']} : {user_confirm}"
         res = chain.invoke(messages)
         request = ""
         new_details, request = update_non_empty_details(new_details,res,request)
-        changes = state["change_request"]
+        changes = state['change_request']
         if request == "Done" : 
-            changes = [change for change in changes if change.field_name != state["handle_request"] ]
+            changes = [change for change in changes if change.field_name != state['handle_request'] ]
         
         if changes : 
             return Command(
