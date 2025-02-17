@@ -73,16 +73,20 @@ graph = parent_graph.compile(checkpointer=memory)
 
 
 
-last_output = None
+# Replace global last_output with a dictionary to store per-user state
+user_states = {}
+
 def process_chat(user_input, user_id):
-    # human_command = {"messages": user_input}
-    global last_output
+    # Get user-specific last_output or None if not exists
+    last_output = user_states.get(user_id)
     responses = []
     config = {"configurable": {"thread_id": user_id}}
+    
     if last_output is None:
         human_command = {"messages": user_input}
-    else : 
+    else:
         human_command = Command(resume=user_input)
+
     for output in graph.stream(human_command, config=config, stream_mode="updates", subgraphs=True):
         # print(output.get('state'))
         if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
@@ -95,9 +99,12 @@ def process_chat(user_input, user_id):
                             if message["role"] == "ai":
                                 responses.append(message["content"])
         # print(utils.state.pick_up_result , utils.state.destination_result , utils.state.booking_details)
-        last_output = output  
-        if isinstance(last_output, tuple) and isinstance(last_output[1], dict) and "__interrupt__" not in last_output[1]:
-            last_output = None
+        # Update user-specific last_output
+        if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+            if "__interrupt__" not in output[1]:
+                user_states[user_id] = None
+            else:
+                user_states[user_id] = output
     branch_state = graph.get_state(config, subgraphs=True)
     # Get booking info from nested state structure
     booking_info = None

@@ -66,13 +66,13 @@ class QuotesAPI:
 #         return (f"Quote(quote_id={self.quote_id}, expires_at={self.expires_at}, vehicle_type={self.vehicle_type}, "
 #                 f"price_value={self.price_value}, price_currency={self.price_currency}, luggage={self.luggage}, "
 #                 f"passengers={self.passengers}, provider_name={self.provider_name}, provider_phone={self.provider_phone})")
-# if __name__ == "__main__":
-#     api = QuotesAPI(os.getenv("JUPITER_API") + "/demand/v1/quotes")
-#     pickup_datetime = '2025-01-09T09:53:44Z'
-#     pickup_coords = {'latitude': 10.7228245, 'longitude': 106.6606769}
-#     destination_coords = {'latitude': 16.0569804, 'longitude': 108.2025372}
-#     quotes_data = api.get_quotes(pickup_datetime, pickup_coords, destination_coords)
-#     print(quotes_data)
+if __name__ == "__main__":
+    api = QuotesAPI(os.getenv("JUPITER_API") + "/demand/v1/quotes")
+    pickup_datetime = '2025-02-17T09:53:44Z'
+    pickup_coords = {'latitude': 10.7228245, 'longitude': 106.6606769}
+    destination_coords = {'latitude': 16.0569804, 'longitude': 108.2025372}
+    quotes_data = api.get_quotes(pickup_datetime, pickup_coords, destination_coords)
+    print(quotes_data)
 #     quotes = []
 #     for item in quotes_data:
         

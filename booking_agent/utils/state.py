@@ -21,7 +21,7 @@ quoteAPI = str(jupiterAPI) + "/demand/v1/quotes"
 bookingsAPI  = str(jupiterAPI) + '/demand/v1/bookings'
 # booking_agent\val_globals.py
 def getData_for_duckling(text, dims):
-    url = 'http://rasa_duckling:8000/parse'
+    url = 'http://localhost:8000/parse'
     data = {
         'locale': 'en_US',
         'text': text,

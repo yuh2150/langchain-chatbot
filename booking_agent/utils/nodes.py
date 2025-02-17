@@ -120,8 +120,8 @@ class NodeUtils:
         geoCoding_destination = geoCodingAPI.get_geocoding(state['booking_info'].destination_location)
         # input_datetime = datetime.fromisoformat(pick_up_time)
         dt_local = datetime.fromisoformat(state['booking_info'].pick_up_time)
-        dt_utc = dt_local.astimezone(tz.UTC)
-        pickup_datetime = dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        # dt_utc = dt_local.astimezone(tz.UTC)
+        pickup_datetime = dt_local.strftime("%Y-%m-%dT%H:%M:%SZ")
         
         pickup_coords = { "latitude": float(geoCoding_pickup['results'][0]['geometry']['location']['lat']),"longitude": float(geoCoding_pickup['results'][0]['geometry']['location']['lng']),}
         destination_coords = { "latitude": float(geoCoding_destination['results'][0]['geometry']['location']['lat']),"longitude": float(geoCoding_destination['results'][0]['geometry']['location']['lng']),}
