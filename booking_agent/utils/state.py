@@ -1,6 +1,6 @@
 
 from typing_extensions import TypedDict
-from typing import Annotated, Literal , List , Optional 
+from typing import Annotated, Literal , List , Optional , Any
 from pydantic import BaseModel, Field , field_validator, ValidationInfo , model_validator
 from langgraph.graph.message import AnyMessage , add_messages
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -15,12 +15,13 @@ from booking_agent.api.geoCoding import GeoCodingAPI
 from booking_agent.api.getKey import OAuthClient
 from booking_agent.api.getQuotes import QuotesAPI
 from booking_agent.api.is_Airport import IsAirport
+# from booking_agent.val_globals import pick_up_result , destination_result ,booking_details
 jupiterAPI = os.getenv('JUPITER_API')
 quoteAPI = str(jupiterAPI) + "/demand/v1/quotes"
 bookingsAPI  = str(jupiterAPI) + '/demand/v1/bookings'
-
+# booking_agent\val_globals.py
 def getData_for_duckling(text, dims):
-    url = 'http://localhost:8000/parse'
+    url = 'http://rasa_duckling:8000/parse'
     data = {
         'locale': 'en_US',
         'text': text,
@@ -34,7 +35,10 @@ def getData_for_duckling(text, dims):
         return json_response
     else:
         return f"Error: {response.status_code}"
-    
+pick_up_result = None
+destination_result = None
+booking_details = None
+
 class BookingCarDetails(BaseModel):
     """Details for the bookings car details"""
     name: str = Field(
@@ -62,8 +66,6 @@ class BookingCarDetails(BaseModel):
         ...,
         description="Flight numbers, consisting of letters and numbers, usually start with the airline code (e.g. VN123, SQ318)."
     )
-    pick_up_location: str
-    destination_location: str
     
     @field_validator('pick_up_location')
     @classmethod
@@ -102,20 +104,29 @@ class BookingCarDetails(BaseModel):
         dimensions = ["time"]
         if value == '':
             return ''
-        data = getData_for_duckling(value,dimensions)
-        if data and isinstance(data, list) and 'value' in data[0] and 'value' in data[0]['value']:
-            return data[0]['value']['value']
-        else:
-            raise ValueError("Invalid time format") 
+        
+        try:
+            expected_format = "%Y-%m-%dT%H:%M:%S.%f%z"
+            parsed_datetime = datetime.strptime(value, expected_format)
+            return value
+        except :
+            data = getData_for_duckling(value,dimensions)
+            if data and isinstance(data, list) and 'value' in data[0] and 'value' in data[0]['value']:
+                return data[0]['value']['value']
+            else:
+                raise ValueError("Invalid time format")
+         
     
     
     @model_validator(mode="after")
     def set_flight_code_if_airport(self)-> str:
+        global pick_up_result , destination_result ,booking_details
         geoCodingAPI = GeoCodingAPI()
         API_Airport = IsAirport(base_url=jupiterAPI + '/v2/distance/airport')
 
         if self.pick_up_location:
             geoCoding_pickup = geoCodingAPI.get_geocoding(self.pick_up_location)
+            pick_up_result = geoCoding_pickup
             if geoCoding_pickup["status"] == "OK":
                 pick_up_lat = geoCoding_pickup['results'][0]['geometry']['location']['lat']
                 pick_up_lng = geoCoding_pickup['results'][0]['geometry']['location']['lng']
@@ -125,8 +136,21 @@ class BookingCarDetails(BaseModel):
                     self.flight_code = 'No request'
                 else :
                     self.flight_code = 'Request'
+        if self.destination_location:
+            geoCoding_destination = geoCodingAPI.get_geocoding(self.destination_location)
+            destination_result = geoCoding_destination
+        if booking_details is None:
+            booking_details = self
+        else:
+            non_empty_details = {key: value for key, value in self.dict().items() if value not in [None, ""]}
+            booking_details = booking_details.copy(update=non_empty_details)
+        
+        # print(booking_details)
         return self
-
+def add_non_empty_details(current_details: BookingCarDetails, new_details: BookingCarDetails):
+    non_empty_details = {k: v for k, v in new_details.model_dump().items() if v not in [None, ""]}
+    updated_details = current_details.model_copy(update=non_empty_details)
+    return updated_details
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     quote_id: str
@@ -168,3 +192,5 @@ class FieldChange(BaseModel):
 
 class ChangeRequest(BaseModel):
     changes: List[FieldChange] = Field(..., description="A list of requested changes, each containing a field name and its new value.")
+
+
