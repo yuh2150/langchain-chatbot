@@ -78,7 +78,7 @@ user_states = {}
 
 def process_chat(user_input, user_id):
     # Get user-specific last_output or None if not exists
-    last_output = user_states.get(user_id)
+    last_output = user_states.get(user_id, {}).get('last_output')
     responses = []
     config = {"configurable": {"thread_id": user_id}}
     
@@ -102,30 +102,31 @@ def process_chat(user_input, user_id):
         # Update user-specific last_output
         if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
             if "__interrupt__" not in output[1]:
-                user_states[user_id] = None
+                user_states[user_id] = {"last_output": None}
             else:
-                user_states[user_id] = output
+                user_states[user_id] = {"last_output": output}
     branch_state = graph.get_state(config, subgraphs=True)
     # Get booking info from nested state structure
     booking_info = None
     if branch_state.tasks and branch_state.tasks[0].state:
         booking_info = branch_state.tasks[0].state.values.get('booking_info', {})
+    if booking_info is not None:
+        user_states[user_id]['booking_details'] = booking_info
 
-    return responses , booking_info
+    return responses
     
 @app.route("/chat", methods=["POST"])
 def chat():
-
     data = request.get_json()
     user_id = data.get("userId", "")
     user_input = data.get("message", "")
     if not user_input:
         return jsonify({"error": "Message is required"}), 400
-    responses , booking_info = process_chat(user_input, user_id)
-    # print(utils.state.booking_details)
+    responses = process_chat(user_input, user_id)
+    print(user_states)
     response_data = OrderedDict([
         ("context", responses),
-        ("booking_details", booking_info.model_dump()),
+        ("booking_details", user_states.get(user_id, {}).get('booking_details', BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")).model_dump()),
         ("pickup_result", utils.state.pick_up_result),
         ("destination_result", utils.state.destination_result)
     ])

@@ -269,7 +269,7 @@ class NodeUtils:
             # goto=active_agent,
         ),Command(update={"quote_id": user_confirm}) ]
         return command
-    def accept_booking(state :State ):
+    def accept_booking(state :State):
         """Call function to accept booking with quote_ID."""
         bookingAPI = BookingAPI(bookingsAPI)
         # quote_id = tracker.get_slot("quoteId")
@@ -286,7 +286,17 @@ class NodeUtils:
             quote_id=state['quote_id'],
             passenger_info=passenger_info
         )
-        return response
+        print(response)
+        return Command (
+            update= {
+                "messages": [
+                    {
+                        "role": "ai",
+                        "content": "Your ride has been booked.",
+                    }
+                ]
+            }
+        )
     def cancel_booking (state : State):
         return Command(
             update={
