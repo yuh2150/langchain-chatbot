@@ -73,22 +73,37 @@ graph = parent_graph.compile(checkpointer=memory)
 
 
 
-# Replace global last_output with a dictionary to store per-user state
-user_states = {}
+# Create a class to store user state
+class UserState:
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.last_output = None
+        self.booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")
+
+# Replace dictionary with list to store user states
+user_states = []
+
+def get_user_state(user_id):
+    for state in user_states:
+        if state.user_id == user_id:
+            return state
+    # Create new state if not found
+    new_state = UserState(user_id)
+    user_states.append(new_state)
+    return new_state
 
 def process_chat(user_input, user_id):
-    # Get user-specific last_output or None if not exists
-    last_output = user_states.get(user_id, {}).get('last_output')
+    # Get or create user state
+    user_state = get_user_state(user_id)
     responses = []
     config = {"configurable": {"thread_id": user_id}}
     
-    if last_output is None:
+    if user_state.last_output is None:
         human_command = {"messages": user_input}
     else:
         human_command = Command(resume=user_input)
 
     for output in graph.stream(human_command, config=config, stream_mode="updates", subgraphs=True):
-        # print(output.get('state'))
         if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
             for key, value in output[1].items():
                 if isinstance(value, dict) and "messages" in value:
@@ -98,23 +113,19 @@ def process_chat(user_input, user_id):
                         if isinstance(message, dict) and "content" in message:
                             if message["role"] == "ai":
                                 responses.append(message["content"])
-        # print(utils.state.pick_up_result , utils.state.destination_result , utils.state.booking_details)
-        # Update user-specific last_output
+        
+        # Update user state last_output
         if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
-            if "__interrupt__" not in output[1]:
-                user_states[user_id] = {"last_output": None}
-            else:
-                user_states[user_id] = {"last_output": output}
+            user_state.last_output = None if "__interrupt__" not in output[1] else output
+
     branch_state = graph.get_state(config, subgraphs=True)
-    # Get booking info from nested state structure
-    booking_info = None
     if branch_state.tasks and branch_state.tasks[0].state:
         booking_info = branch_state.tasks[0].state.values.get('booking_info', {})
-    if booking_info is not None:
-        user_states[user_id]['booking_details'] = booking_info
+        if booking_info:
+            user_state.booking_details = booking_info
 
     return responses
-    
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -122,16 +133,17 @@ def chat():
     user_input = data.get("message", "")
     if not user_input:
         return jsonify({"error": "Message is required"}), 400
+        
     responses = process_chat(user_input, user_id)
-    print(user_states)
+    user_state = get_user_state(user_id)
+    
     response_data = OrderedDict([
         ("context", responses),
-        ("booking_details", user_states.get(user_id, {}).get('booking_details', BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")).model_dump()),
+        ("booking_details", user_state.booking_details.model_dump()),
         ("pickup_result", utils.state.pick_up_result),
         ("destination_result", utils.state.destination_result)
     ])
     return jsonify(response_data)
-    # return jsonify({"context": responses, "booking_details" : utils.state.booking_details.model_dump() , "pickup_result" : utils.state.pick_up_result , "destination_result" : utils.state.destination_result})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
