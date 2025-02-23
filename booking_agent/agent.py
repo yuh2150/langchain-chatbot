@@ -78,7 +78,9 @@ class UserState:
     def __init__(self, user_id):
         self.user_id = user_id
         self.last_output = None
-        self.booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")
+        self.pickup_result = None
+        self.destination_result = None
+        self.booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="",flight="")
 
 # Replace dictionary with list to store user states
 user_states = []
@@ -123,7 +125,9 @@ def process_chat(user_input, user_id):
         booking_info = branch_state.tasks[0].state.values.get('booking_info', {})
         if booking_info:
             user_state.booking_details = booking_info
-
+            # Update pickup and destination results
+            user_state.pickup_result = utils.state.pick_up_result
+            user_state.destination_result = utils.state.destination_result
     return responses
 
 @app.route("/chat", methods=["POST"])
@@ -133,15 +137,16 @@ def chat():
     user_input = data.get("message", "")
     if not user_input:
         return jsonify({"error": "Message is required"}), 400
-        
+    utils.state.pick_up_result = None
+    utils.state.destination_result = None    
     responses = process_chat(user_input, user_id)
     user_state = get_user_state(user_id)
     
     response_data = OrderedDict([
         ("context", responses),
         ("booking_details", user_state.booking_details.model_dump()),
-        ("pickup_result", utils.state.pick_up_result),
-        ("destination_result", utils.state.destination_result)
+        ("pickup_result", user_state.pickup_result),
+        ("destination_result", user_state.destination_result)
     ])
     return jsonify(response_data)
 

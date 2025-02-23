@@ -63,9 +63,18 @@ class Quote:
                 f"passengers={self.passengers}, provider_name={self.provider_name}, provider_phone={self.provider_phone})")
 def check_what_is_empty(user_personal_details):
     ask_for = []
+    flight = ""
+    flight_code = ""
     for field, value in user_personal_details.model_dump().items():
-        if value in [None, "", 0,'Request']:  
+        if value in [None, "", 0]:  
             ask_for.append(field)
+        if  field == "flight" :
+            flight = value
+        if  field == "flight_code" :
+            flight_code = value
+    if flight == "Request" and flight_code == "None":
+        ask_for.append("flight_code")
+        
     return ask_for
 def add_non_empty_details(current_details: BookingCarDetails, new_details: BookingCarDetails):
     non_empty_details = {k: v for k, v in new_details.model_dump().items() if v not in [None, ""]}
@@ -74,7 +83,7 @@ def add_non_empty_details(current_details: BookingCarDetails, new_details: Booki
     if 'destination_location' in non_empty_details and non_empty_details['destination_location'] == current_details.pick_up_location :
         non_empty_details['destination_location'] = ""
     if new_details.pick_up_location != '': 
-        non_empty_details['flight_code'] = new_details.flight_code
+        non_empty_details['flight'] = new_details.flight
     updated_details = current_details.model_copy(update=non_empty_details)
     return updated_details
 def update_non_empty_details(current_details: BookingCarDetails, new_details: BookingCarDetails , request):
@@ -87,7 +96,7 @@ def update_non_empty_details(current_details: BookingCarDetails, new_details: Bo
         non_empty_details['destination_location'] = ""
         request = "unDone"
     if new_details.pick_up_location != '': 
-        non_empty_details["flight_code"] = new_details.flight_code
+        non_empty_details["flight"] = new_details.flight
     updated_details = current_details.model_copy(update=non_empty_details)
     return updated_details , request
 class NodeUtils:
@@ -99,7 +108,7 @@ class NodeUtils:
         if "booking_info" in state:
             booking_details = state['booking_info']
         else:
-            booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="")
+            booking_details = BookingCarDetails(name="", number_phone="", pick_up_location="", destination_location="", pick_up_time="", flight_code="",flight="")
         
         if "slot_empty" in state and state['slot_empty'] != []:
             ask_for = state['slot_empty']
@@ -185,14 +194,16 @@ class NodeUtils:
             ### ask_for list: {ask_for}"""
         )
         info_gathering_chain = first_prompt | llm | StrOutputParser()
-        if state['slot_empty'] : 
-            ai_chat = info_gathering_chain.invoke({"ask_for": state['slot_empty']})
+        if state["slot_empty"] : 
+            ai_chat = info_gathering_chain.invoke({"ask_for": state["slot_empty"]})
             return Command(update= {"messages": [
                         {
                             "role": "ai",
                             "content": ai_chat,
                     }
                 ]} , goto="human")
+        else :
+            Command(goto="ask_confirm")
     def get_state(state : State):
         slot_empty = state['slot_empty']
         if slot_empty == [] :
@@ -209,7 +220,7 @@ class NodeUtils:
             f"- Name: {state['booking_info'].name}\n"
             f"- Contact Number: {state['booking_info'].number_phone}\n"
         )
-        if state['booking_info'].flight_code != 'No request':
+        if state['booking_info'].flight_code != 'None':
                 message += f"- Flight Code: {state['booking_info'].flight_code}\n"
         return Command(update= {"messages": [
                         {
@@ -383,16 +394,18 @@ class NodeUtils:
         response = chain_confirm.invoke(user_confirm.messages)
         return Command(update={"change_request" : response.request})
 
-    def perform_request(state :State , config) -> Command[Literal["ask_confirm", "ask_change"]] :
-        new_details = state['booking_info']
+    def perform_request(state :State , config) -> Command[Literal[ "ask_change","ask_info_empty"]] :
+        new_details = state["booking_info"]
         changes = []
         processed_fields = []
-        if "change_request" in state:
-            changes = state['change_request']
+        message = ""
+        if "change_request" in state and state["change_request"] != [] :
+            changes = state["change_request"]
         else :
             chain_confirm = llm.with_structured_output(ChangeRequest)
-            response =chain_confirm.invoke(state['messages'][-1].content)
+            response =chain_confirm.invoke(state["messages"][-1].content)
             changes = response.changes
+        print(changes)
         for change in changes:
                 if change.field_name not in [None, "None"] and change.field_name in ["name", "number_phone", "pick_up_location", "destination_location", "pick_up_time", "flight_code"]:
                     if change.new_value not in [None,"None"] :
@@ -402,7 +415,9 @@ class NodeUtils:
                             "pick_up_location": "",
                             "destination_location": "",
                             "pick_up_time": "",
-                            "flight_code": ""
+                            "flight_code": "",
+                            "flight": "",
+                            
                         }
                         temp_data.update({change.field_name: change.new_value})  # Chỉ cập nhật field cần thay đổi
                         temp_detail = BookingCarDetails(**temp_data)
@@ -412,28 +427,39 @@ class NodeUtils:
                         # setattr(new_details, change.field_name, change.new_value)
                         if request == "Done" : 
                             processed_fields.append(change)
+                        else : 
+                            message = "Please re-enter, pick up location and destination cannot be the same"
         changes = [change for change in changes if change not in processed_fields]
-        
-        if changes : 
+        ask_for = check_what_is_empty(new_details)
+        if changes:
+            update_dict = {
+                "handle_request": changes[0].field_name,
+                "change_request": changes,
+                "booking_info": new_details
+            }
+            if message != "":
+                update_dict["messages"] = [
+                    {
+                        "role": "ai",
+                        "content": f"{message}",
+                    }
+                ]
             return Command(
-                update={
-                    "handle_request" : changes[0].field_name,
-                    "change_request" : changes,
-                    "booking_info" : new_details
-                },
+                update=update_dict,
                 goto="ask_change",
             )
 
         else : 
             return Command(
                 update={
+                    "slot_empty" : ask_for,
                     "change_request" : changes,
                     "booking_info" : new_details
                 },
-                goto="ask_confirm",
+                goto="ask_info_empty",
             ) 
     def system_ask_change(state :State, config):
-        handle_request = state['handle_request']
+        handle_request = state["handle_request"]
         field_name_mapping = {
             "name": "name",
             "number_phone": "number phone",
@@ -443,7 +469,7 @@ class NodeUtils:
             "flight_code": "flight code",
         }
         field = field_name_mapping.get(handle_request)
-        # state['change_request']
+        # state["change_request"]
         return Command(
                 update={
                     "messages": [
@@ -457,33 +483,38 @@ class NodeUtils:
             ) 
     def human_node_ans_change(state :State, config) -> Command[Literal["ask_confirm", "ask_change"]]:
         """A node for collecting user confirm."""
-        new_details = state['booking_info']
+        new_details = state["booking_info"]
         user_confirm = interrupt(value="Please answer.")
         chain = llm.with_structured_output(BookingCarDetails)
-        messages = f"{state['handle_request']} : {user_confirm}"
+        messages = f"{state["handle_request"]} : {user_confirm}"
         res = chain.invoke(messages)
         request = ""
         new_details, request = update_non_empty_details(new_details,res,request)
-        changes = state['change_request']
+        changes = state["change_request"]
+        message = ""
         if request == "Done" : 
-            changes = [change for change in changes if change.field_name != state['handle_request'] ]
-        
-        if changes : 
+            changes = [change for change in changes if change.field_name != state["handle_request"] ]
+        else : 
+            message = "Please re-enter, pick up location and destination cannot be the same"
+        ask_for = check_what_is_empty(new_details)
+        if changes:
+            update_dict = {
+                "handle_request": changes[0].field_name,
+                "change_request": changes,
+                "booking_info": new_details
+            }
+            if message != "":
+                update_dict["messages"] = [
+                    {
+                        "role": "ai",
+                        "content": f"{message}",
+                    }
+                ]
             return Command(
-                update={
-                    
-                    "handle_request" : changes[0].field_name,
-                    "change_request" : changes,
-                    "booking_info" : new_details,
-                    "messages": [
-                        {
-                            "role": "human",
-                            "content": user_confirm
-                        }
-                    ],
-                },
+                update=update_dict,
                 goto="ask_change",
             )
+
         else :  
             return Command(
                 update={

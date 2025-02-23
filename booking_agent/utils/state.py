@@ -66,6 +66,7 @@ class BookingCarDetails(BaseModel):
         ...,
         description="Flight numbers, consisting of letters and numbers, usually start with the airline code (e.g. VN123, SQ318)."
     )
+    flight : str = Field(..., description="Request or No Request")
     
     @field_validator('pick_up_location')
     @classmethod
@@ -133,9 +134,12 @@ class BookingCarDetails(BaseModel):
                 
                 is_Airport = API_Airport.is_Airport(pick_up_lat, pick_up_lng)
                 if is_Airport[0] == False:  # Nếu là sân bay
-                    self.flight_code = 'No request'
+                    self.flight = 'No request'
+                    self.flight_code = 'None'
                 else :
-                    self.flight_code = 'Request'
+                    self.flight = 'Request'
+                    
+                    
         if self.destination_location:
             geoCoding_destination = geoCodingAPI.get_geocoding(self.destination_location)
             destination_result = geoCoding_destination
